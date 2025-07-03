@@ -28,6 +28,17 @@ def load_snap_data():
     df["Month"] = df["date"].dt.month
     return df
 
+# --- LOAD POPULATION DATA ---
+@st.cache_data
+def load_pop_data():
+    """Load population data with metro area information"""
+    try:
+        pop_df = pd.read_csv("src/data/popData.csv")
+        return pop_df
+    except Exception as e:
+        print(f"Warning: Could not load population data: {e}")
+        return None
+
 # --- LOAD GEOJSON ---
 @st.cache_data
 def load_geojson():
@@ -72,6 +83,7 @@ with tabs[0]:
     st.markdown(f"<h4 style='margin-top:-12px;color:gray'>{SUBTITLE}</h4>", unsafe_allow_html=True)
 
     snap_df = load_snap_data()
+    pop_df = load_pop_data()
     counties_geojson = load_geojson()
 
     unique_dates = snap_df['date'].sort_values().unique()
@@ -80,6 +92,35 @@ with tabs[0]:
 
     filtered_df = snap_df[snap_df['date'].dt.strftime('%b %Y') == selected_date].copy()
     filtered_df['SNAP_Applications_Display'] = filtered_df['SNAP_Applications'].apply(format_snap)
+    
+    # Merge with population data for hover information
+    if pop_df is not None:
+        # Clean up column names in case of whitespace
+        pop_df.columns = pop_df.columns.str.strip()
+        # Clean county names for matching
+        filtered_df['county_clean'] = filtered_df['county'].str.replace(' County', '', regex=False)
+        pop_df['county_clean'] = pop_df['County'].str.replace(' County', '', regex=False)
+        # Check for fips column
+        if 'fips' not in pop_df.columns:
+            print('DEBUG: popData columns:', pop_df.columns.tolist())
+            raise KeyError("'fips' column not found in popData.csv. Columns are: " + str(pop_df.columns.tolist()))
+        filtered_df = filtered_df.merge(
+            pop_df[['county_clean', 'metro_area', 'Population', 'Population Density', 'fips']], 
+            on='county_clean', 
+            how='left'
+        )
+        
+        # Create hover text with the specified order, including FIPS before SNAP Applications
+        filtered_df['hover_text'] = filtered_df.apply(
+            lambda row: f"<b>{row['county']}</b><br>Metro: {row.get('metro_area', 'N/A')}<br>Population: {row.get('Population', 'N/A'):,}<br>Population Density: {row.get('Population Density', 'N/A'):,}<br>FIPS: {row.get('fips', 'N/A')}<br>SNAP Applications: {row['SNAP_Applications_Display']}", 
+            axis=1
+        )
+    else:
+        # Fallback if population data is not available
+        filtered_df['hover_text'] = filtered_df.apply(
+            lambda row: f"<b>{row['county']}</b><br>SNAP Applications: {row['SNAP_Applications_Display']}", 
+            axis=1
+        )
 
     snap_df['z_score'] = compute_z_scores(snap_df)
     zscore_map = snap_df[snap_df['date'].dt.strftime('%b %Y') == selected_date].set_index('county')['z_score'].to_dict()
@@ -101,13 +142,13 @@ with tabs[0]:
         locations='county',
         color='Flag',
         color_discrete_map=flag_color_map,
-        custom_data=['county', 'SNAP_Applications_Display'],
+        custom_data=['hover_text'],
         featureidkey="properties.name",
         scope="usa",
         height=700
     )
     fig.update_traces(
-        hovertemplate="<b>%{customdata[0]}</b><br>SNAP Applications: %{customdata[1]}<extra></extra>"
+        hovertemplate="%{customdata[0]}<extra></extra>"
     )
     fig.update_geos(fitbounds="locations", visible=True)
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=False)
@@ -126,6 +167,7 @@ flag_color_map = {
 with tabs[1]:
     st.title("Predictions")
     snap_df = load_snap_data()
+    pop_df = load_pop_data()
     counties_geojson = load_geojson()
     snap_df['county'] = snap_df['county'].astype(str)
     unique_dates = snap_df['date'].sort_values().unique()
@@ -138,10 +180,9 @@ with tabs[1]:
         pred_df['county_normalized'] = pred_df['county'].str.strip().str.lower()
 
         # Set predicted month to current month and year
-        from datetime import datetime
         current_date = datetime.now()
-        pred_month_label = current_date.strftime("%Y-%m")
-        pred_dt = pd.to_datetime(pred_month_label, format='%Y-%m')
+        pred_month_label = current_date.strftime("%Y-%m-01")  # Match the CSV format
+        pred_dt = pd.to_datetime(pred_month_label, format='%Y-%m-%d')
         pred_month_english = pred_dt.strftime('%b %Y')
         pred_option = f"Predicted: {pred_month_english}"
         date_options_with_pred = date_options + [pred_option]
@@ -156,32 +197,38 @@ with tabs[1]:
         pred_rows = pred_df[pred_df['date'] == pred_month_label].copy()
         pred_map = pred_rows.set_index('county_normalized')['predicted_applications'].to_dict()
         
-        # Ensure flag column exists and is properly formatted
         if 'flag' not in pred_rows.columns:
-            pred_rows['flag'] = 'Gray'  # Default to Gray if flag column is missing
-        
-        # Debug: Print unique flag values
-        print("Unique flag values in pred_rows:", pred_rows['flag'].unique())
+            pred_rows['flag'] = 'Gray'
         
         pred_flag_map = pred_rows.set_index('county_normalized')['flag'].str.capitalize().to_dict()
-        print("Sample flag mappings:", list(pred_flag_map.items())[:5])
-
         base_df = snap_df[snap_df['date'] == unique_dates[-1]].copy()
         base_df['county_normalized'] = base_df['county'].str.strip().str.lower()
-        
-        # Map the flags and print debug info
         base_df['Flag'] = base_df['county_normalized'].map(pred_flag_map).fillna('Gray')
-        print("Unique Flag values after mapping:", base_df['Flag'].unique())
-        
         base_df['color'] = base_df['Flag'].map(lambda x: flag_color_map.get(x, "#888888"))
-        print("Unique color values:", base_df['color'].unique())
-        
         base_df['prediction'] = base_df['county_normalized'].map(pred_map)
 
-        # Add actuals for current month
-        base_df['actual'] = base_df['SNAP_Applications'].apply(format_snap)
-        base_df['prediction_str'] = base_df.apply(
-            lambda row: f"Actual: {row['actual']}<br>Prediction for {pred_month_english}: {format_snap(row['prediction'])}", axis=1)
+        # Merge with popData for hover
+        if pop_df is not None:
+            pop_df.columns = pop_df.columns.str.strip()
+            base_df['county_clean'] = base_df['county'].str.replace(' County', '', regex=False)
+            pop_df['county_clean'] = pop_df['County'].str.replace(' County', '', regex=False)
+            if 'fips' not in pop_df.columns:
+                print('DEBUG: popData columns:', pop_df.columns.tolist())
+                raise KeyError("'fips' column not found in popData.csv. Columns are: " + str(pop_df.columns.tolist()))
+            base_df = base_df.merge(
+                pop_df[['county_clean', 'metro_area', 'Population', 'Population Density', 'fips']],
+                on='county_clean',
+                how='left'
+            )
+            base_df['hover_text'] = base_df.apply(
+                lambda row: f"<b>{row['county']}</b><br>Metro: {row.get('metro_area', 'N/A')}<br>Population: {row.get('Population', 'N/A'):,}<br>Population Density: {row.get('Population Density', 'N/A'):,}<br>FIPS: {row.get('fips', 'N/A')}<br>Prediction for {pred_month_english}: {format_snap(row['prediction'])}",
+                axis=1
+            )
+        else:
+            base_df['hover_text'] = base_df.apply(
+                lambda row: f"<b>{row['county']}</b><br>Prediction for {pred_month_english}: {format_snap(row['prediction'])}",
+                axis=1
+            )
         filtered_df = base_df.copy()
     else:
         selected_date_dt = pd.to_datetime(selected_date)
@@ -192,7 +239,41 @@ with tabs[1]:
         filtered_df['Flag'] = filtered_df['z_score'].apply(zscore_to_flag)
         filtered_df['color'] = filtered_df['Flag'].map(lambda x: flag_color_map.get(x, "#888888"))
         filtered_df['actual'] = filtered_df['SNAP_Applications'].apply(format_snap)
-        filtered_df['prediction_str'] = filtered_df.apply(
+        # Get predictions for July 2025 if available
+        if pred_df is not None:
+            july_2025_pred = pred_df[pred_df['date'] == '2025-07-01'].copy()
+            if not july_2025_pred.empty:
+                july_2025_pred['county_normalized'] = july_2025_pred['county'].str.strip().str.lower()
+                pred_map_july = july_2025_pred.set_index('county_normalized')['predicted_applications'].to_dict()
+                filtered_df['county_normalized'] = filtered_df['county'].str.strip().str.lower()
+                filtered_df['july_prediction'] = filtered_df['county_normalized'].map(pred_map_july)
+                # Merge with popData for hover
+                if pop_df is not None:
+                    pop_df.columns = pop_df.columns.str.strip()
+                    filtered_df['county_clean'] = filtered_df['county'].str.replace(' County', '', regex=False)
+                    pop_df['county_clean'] = pop_df['County'].str.replace(' County', '', regex=False)
+                    if 'fips' not in pop_df.columns:
+                        print('DEBUG: popData columns:', pop_df.columns.tolist())
+                        raise KeyError("'fips' column not found in popData.csv. Columns are: " + str(pop_df.columns.tolist()))
+                    filtered_df = filtered_df.merge(
+                        pop_df[['county_clean', 'metro_area', 'Population', 'Population Density', 'fips']],
+                        on='county_clean',
+                        how='left'
+                    )
+                    filtered_df['hover_text'] = filtered_df.apply(
+                        lambda row: f"<b>{row['county']}</b><br>Metro: {row.get('metro_area', 'N/A')}<br>Population: {row.get('Population', 'N/A'):,}<br>Population Density: {row.get('Population Density', 'N/A'):,}<br>FIPS: {row.get('fips', 'N/A')}<br>Actual: {row['actual']}<br>Prediction for Jul 2025: {format_snap(row['july_prediction'])}",
+                        axis=1
+                    )
+                else:
+                    filtered_df['hover_text'] = filtered_df.apply(
+                        lambda row: f"Actual: {row['actual']}<br>Prediction for Jul 2025: {format_snap(row['july_prediction'])}",
+                        axis=1
+                    )
+            else:
+                filtered_df['hover_text'] = filtered_df.apply(
+                    lambda row: f"Actual: {row['actual']}<br>No prediction available", axis=1)
+        else:
+            filtered_df['hover_text'] = filtered_df.apply(
             lambda row: f"Actual: {row['actual']}<br>No prediction available", axis=1)
 
     # Debug: Print the columns in filtered_df
@@ -207,13 +288,13 @@ with tabs[1]:
         color='Flag',
         color_discrete_map=flag_color_map,
         category_orders={"Flag": ["Red", "Yellow", "Green", "Gray"]},
-        custom_data=['county', 'prediction_str'],
+        custom_data=['hover_text'],
         featureidkey="properties.name",
         scope="usa",
         height=700
     )
     fig.update_traces(
-        hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]}<extra></extra>"
+        hovertemplate="%{customdata[0]}<extra></extra>"
     )
     fig.update_geos(fitbounds="locations", visible=True)
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=False)

@@ -121,7 +121,31 @@ def save_predictions_to_csv(predictions, output_file="src/data/finalPrediction.c
             for (county, date), pred in predictions.items()
         ])
         
-        # Calculate z-scores for predictions
+        # Load historical SNAP data to calculate county-specific statistics
+        try:
+            snap_data = pd.read_csv("src/data/SNAPApps/SNAPData.csv", header=None, 
+                                   names=["county", "date_str", "SNAP_Applications"], thousands=",")
+            snap_data["date"] = pd.to_datetime(snap_data["date_str"].str.strip(), format="%b %Y", errors="coerce")
+            snap_data.loc[snap_data["date"].isna(), "date"] = pd.to_datetime(
+                snap_data.loc[snap_data["date"].isna(), "date_str"].str.strip(), format="%B %Y", errors="coerce"
+            )
+            snap_data["SNAP_Applications"] = pd.to_numeric(snap_data["SNAP_Applications"].replace("*", pd.NA), errors="coerce")
+            
+            # Calculate county-specific statistics from historical data
+            county_stats = snap_data.groupby('county')["SNAP_Applications"].agg(['mean', 'std']).reset_index()
+            
+            # Merge with predictions
+            df = df.merge(county_stats, on='county', how='left')
+            
+            # Calculate z-scores using historical county-specific statistics
+            df['z_score'] = (df['predicted_applications'] - df['mean']) / df['std']
+            df['z_score'] = df['z_score'].fillna(0)  # Fill NaN with 0 if no historical data
+            
+        except Exception as e:
+            print(f"Warning: Could not load historical data for county-specific z-scores: {str(e)}")
+            print("Falling back to prediction-based z-scores...")
+            
+            # Fallback: Calculate z-scores for predictions (original method)
         mean_apps = df['predicted_applications'].mean()
         std_apps = df['predicted_applications'].std()
         
@@ -134,8 +158,13 @@ def save_predictions_to_csv(predictions, output_file="src/data/finalPrediction.c
         # Add flag based on z-score
         df['flag'] = df['z_score'].apply(zscore_to_flag)
         
-        # Drop z-score column as it's not needed in the final output
-        df = df.drop(columns=['z_score'])
+        # Drop intermediate columns as they're not needed in the final output
+        columns_to_drop = ['z_score']
+        if 'mean' in df.columns:
+            columns_to_drop.append('mean')
+        if 'std' in df.columns:
+            columns_to_drop.append('std')
+        df = df.drop(columns=columns_to_drop)
         
         # Save to CSV
         df.to_csv(output_file, index=False)
@@ -152,14 +181,8 @@ def generate_predictions(counties=None):
     
     predictions = {}
     today = datetime.now().date()
-    
-    # Generate prediction date (first day of next month)
-    if today.day > 1:
-        next_month = today.replace(day=1) + timedelta(days=32)
-        prediction_date = next_month.replace(day=1)
-    else:
-        prediction_date = today.replace(day=1)
-    
+    # Generate prediction date (first day of current month)
+    prediction_date = today.replace(day=1)
     prediction_date_str = prediction_date.strftime("%Y-%m-01")
     
     print(f"Generating predictions for {prediction_date_str}...")
