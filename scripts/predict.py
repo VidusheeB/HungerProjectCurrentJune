@@ -11,18 +11,27 @@ logger = logging.getLogger(__name__)
 
 MODELS_DIR = "county_models"
 COUNTY_METRO_MAP = "src/data/county_to_metro.csv"
+POP_DATA_FILE = "src/data/popData.csv"
 PREDICTION_BASE_DIR = "src/data/prediction"
 
-def load_model(county):
-    with open(f"{MODELS_DIR}/{county}_model.pkl", "rb") as f:
+# Always load the global model
+
+def load_global_model():
+    with open(os.path.join(MODELS_DIR, "global_model.pkl"), "rb") as f:
         return pickle.load(f)
 
-def predict_next_month(county, trends_dict):
-    model_info = load_model(county)
+def predict_next_month(trends_dict, population):
+    if not trends_dict:
+        raise ValueError("No trend data provided for prediction")
+    
+    model_info = load_global_model()
     features = model_info["features"]
     model = model_info["model"]
     # trends_dict: {"trend_keyword1": value, "trend_keyword2": value, ...}
-    X_pred = pd.DataFrame([trends_dict], columns=features)
+    # Add population to the features
+    input_dict = {**trends_dict, "Population": population}
+    # Ensure all features are present
+    X_pred = pd.DataFrame([input_dict], columns=features)
     prediction = model.predict(X_pred)[0]
     return prediction
 
@@ -33,12 +42,28 @@ def get_metro_for_county(county):
         raise ValueError(f"No metro found for county {county}")
     return row.iloc[0]["metro_area"]
 
+def get_population_for_county(county):
+    pop_df = pd.read_csv(POP_DATA_FILE)
+    pop_df.columns = pop_df.columns.str.strip()
+    row = pop_df[pop_df["County"] == county]
+    if row.empty:
+        raise ValueError(f"No population found for county {county}")
+    return float(row.iloc[0]["Population"])
+
 def get_latest_trends_for_metro(metro_area):
     """
     Load the latest trend data from the prediction folder for each keyword
     """
     trends = {}
-    keywords = ["CalFresh", "ElectronicBenefitTransfer", "SNAP"]
+    # Automatically detect available keywords from the prediction directory
+    if os.path.exists(PREDICTION_BASE_DIR):
+        keywords = [d for d in os.listdir(PREDICTION_BASE_DIR) 
+                   if os.path.isdir(os.path.join(PREDICTION_BASE_DIR, d))]
+    else:
+        logger.error(f"Prediction base directory {PREDICTION_BASE_DIR} does not exist")
+        return {}
+    
+    logger.info(f"Detected keywords: {keywords}")
     
     for keyword in keywords:
         prediction_file = os.path.join(PREDICTION_BASE_DIR, keyword, f"{metro_area}.csv")
@@ -68,28 +93,49 @@ def get_latest_trends_for_metro(metro_area):
             if non_zero.empty:
                 logger.warning(f"No non-zero values in {prediction_file}")
                 continue
-                
-            latest = non_zero.sort_values("date").iloc[-1]
-            trends[f"trend_{keyword}"] = float(latest["value"])
+            # Ensure non_zero is not empty before accessing iloc[-1]
+            non_zero_sorted = non_zero.sort_values(by="date")
+            latest = non_zero_sorted.iloc[-1]
             
-            logger.info(f"Using {keyword} trend value: {latest['value']:.2f}")
+            # Map directory names to feature names used in training
+            if keyword == "FoodBank":
+                feature_name = "monthly_average_FoodBank"
+            elif keyword == "CalFresh":
+                feature_name = "monthly_average_CalFresh"
+            else:
+                feature_name = f"monthly_average_{keyword}"
+            
+            trends[feature_name] = float(latest["value"])
+            
+            logger.info(f"Using {keyword} trend value: {latest['value']:.2f} -> {feature_name}")
             
         except Exception as e:
             logger.warning(f"Error processing {prediction_file}: {str(e)}")
             continue
     
     if not trends:
-        raise ValueError(f"No valid trend data found for metro area {metro_area}")
+        logger.warning(f"No valid trend data found for metro area {metro_area}")
+        return {}
+    
+    # Check if we have all required features for the model
+    required_features = ["monthly_average_FoodBank", "monthly_average_CalFresh"]
+    missing_features = [f for f in required_features if f not in trends]
+    
+    if missing_features:
+        logger.warning(f"Missing required features for {metro_area}: {missing_features}")
+        return {}
+    
     return trends
 
 def list_available_counties():
-    """List all available counties that have models"""
+    """List all available counties that have population and metro mapping"""
     try:
-        counties = [f.replace('_model.pkl', '') for f in os.listdir(MODELS_DIR) 
-                   if f.endswith('_model.pkl')]
+        county_metro_map = pd.read_csv(COUNTY_METRO_MAP)
+        pop_df = pd.read_csv(POP_DATA_FILE)
+        counties = set(county_metro_map["county"]).intersection(set(pop_df["County"]))
         return sorted(counties)
-    except FileNotFoundError:
-        logger.error(f"Models directory not found: {MODELS_DIR}")
+    except Exception as e:
+        logger.error(f"Error listing counties: {e}")
         return []
 
 def zscore_to_flag(z):
@@ -193,13 +239,14 @@ def generate_predictions(counties=None):
             if not metro:
                 print(f"Skipping {county}: No metro area found")
                 continue
-                
+            
             trends = get_latest_trends_for_metro(metro)
             if not trends:
                 print(f"Skipping {county}: No trend data available")
                 continue
-                
-            prediction = predict_next_month(county, trends)
+            
+            population = get_population_for_county(county)
+            prediction = predict_next_month(trends, population)
             predictions[(county, prediction_date_str)] = round(prediction, 2)
             print(f"{county}: {prediction:.2f}")
             
@@ -224,8 +271,9 @@ def main():
                 print(f"No trend data available for {metro}")
                 sys.exit(1)
 
+            population = get_population_for_county(county)
             # Make prediction
-            prediction = predict_next_month(county, trends)
+            prediction = predict_next_month(trends, population)
             print(f"Predicted SNAP applications for {county} next month: {prediction:.2f}")
             
             # Save to CSV

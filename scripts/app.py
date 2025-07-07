@@ -197,15 +197,32 @@ with tabs[1]:
         pred_rows = pred_df[pred_df['date'] == pred_month_label].copy()
         pred_map = pred_rows.set_index('county_normalized')['predicted_applications'].to_dict()
         
-        if 'flag' not in pred_rows.columns:
-            pred_rows['flag'] = 'Gray'
-        
-        pred_flag_map = pred_rows.set_index('county_normalized')['flag'].str.capitalize().to_dict()
+        # Use the same z-score calculation as the current map for consistency
         base_df = snap_df[snap_df['date'] == unique_dates[-1]].copy()
         base_df['county_normalized'] = base_df['county'].str.strip().str.lower()
-        base_df['Flag'] = base_df['county_normalized'].map(pred_flag_map).fillna('Gray')
-        base_df['color'] = base_df['Flag'].map(lambda x: flag_color_map.get(x, "#888888"))
         base_df['prediction'] = base_df['county_normalized'].map(pred_map)
+        
+        # Calculate z-scores using the same method as current map
+        snap_df['z_score'] = compute_z_scores(snap_df)
+        # Create a mapping of predictions to z-scores using the same historical baseline
+        pred_z_scores = {}
+        for county in pred_map.keys():
+            county_original = base_df[base_df['county_normalized'] == county]['county'].iloc[0] if not base_df[base_df['county_normalized'] == county].empty else None
+            if county_original:
+                # Get historical stats for this county
+                county_data = snap_df[snap_df['county'] == county_original]
+                if not county_data.empty:
+                    county_mean = county_data['SNAP_Applications'].mean()
+                    county_std = county_data['SNAP_Applications'].std()
+                    if county_std > 0:
+                        pred_value = pred_map[county]
+                        z_score = (pred_value - county_mean) / county_std
+                        pred_z_scores[county] = z_score
+        
+        # Apply z-score to flag conversion using the same function
+        base_df['pred_z_score'] = base_df['county_normalized'].map(pred_z_scores)
+        base_df['Flag'] = base_df['pred_z_score'].apply(zscore_to_flag)
+        base_df['color'] = base_df['Flag'].map(lambda x: flag_color_map.get(x, "#888888"))
 
         # Merge with popData for hover
         if pop_df is not None:
