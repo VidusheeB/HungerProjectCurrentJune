@@ -250,12 +250,15 @@ with tabs[1]:
     else:
         selected_date_dt = pd.to_datetime(selected_date)
         filtered_df = snap_df[snap_df['date'].dt.strftime('%b %Y') == selected_date].copy()
-        snap_df['z_score'] = compute_z_scores(snap_df[snap_df['date'] <= selected_date_dt])
+        
+        # FIX: Use the same z-score calculation as the current tab (full dataset)
+        snap_df['z_score'] = compute_z_scores(snap_df)
         zscore_map = snap_df[snap_df['date'].dt.strftime('%b %Y') == selected_date].set_index('county')['z_score'].to_dict()
         filtered_df['z_score'] = filtered_df['county'].map(zscore_map)
         filtered_df['Flag'] = filtered_df['z_score'].apply(zscore_to_flag)
         filtered_df['color'] = filtered_df['Flag'].map(lambda x: flag_color_map.get(x, "#888888"))
         filtered_df['actual'] = filtered_df['SNAP_Applications'].apply(format_snap)
+        
         # Get predictions for July 2025 if available
         if pred_df is not None:
             july_2025_pred = pred_df[pred_df['date'] == '2025-07-01'].copy()
