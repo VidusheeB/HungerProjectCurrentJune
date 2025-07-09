@@ -46,3 +46,7 @@ node_modules/
 
 # Logs
 *.log
+
+# Model files (large pickle files)
+*.pkl
+county_models/
