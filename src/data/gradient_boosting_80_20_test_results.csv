@@ -1,0 +1,2 @@
+train_mae,train_rmse,train_r2,train_mape,test_mae,test_rmse,test_r2,test_mape,feature_importance
+842.5226955397486,4275.98980740466,0.8487933902936892,62.999321022800444,812.8398681976889,4849.717135676392,0.6722737616601804,76.15258027984979,"[{'Feature': 'Population', 'Importance': 0.9489126545347899}, {'Feature': 'monthly_average_CalFresh', 'Importance': 0.051087345465210154}]"

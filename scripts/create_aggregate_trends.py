@@ -44,6 +44,12 @@ def create_aggregate_trends():
         )
     snap_df["SNAP_Applications"] = pd.to_numeric(snap_df["SNAP_Applications"], errors="coerce")
     
+    # Shift SNAP data forward by one month to create prediction relationship
+    # Month N trends should predict Month N+1 SNAP applications
+    snap_df["trend_date"] = snap_df["date"] - pd.DateOffset(months=1)
+    print(f"Shifted SNAP data: Month N trends will predict Month N+1 SNAP applications")
+    print(f"Example: May 2022 trends predict June 2022 SNAP applications")
+    
     # Read population data
     pop_df = pd.read_csv(pop_data_file)
     pop_df.columns = pop_df.columns.str.strip()
@@ -69,10 +75,12 @@ def create_aggregate_trends():
     
     # Add SNAP applications
     base_df = base_df.merge(
-        snap_df[['county', 'date', 'SNAP_Applications']], 
-        on=['county', 'date'], 
+        snap_df[['county', 'trend_date', 'SNAP_Applications']], 
+        left_on=['county', 'date'], 
+        right_on=['county', 'trend_date'], 
         how='left'
     )
+    base_df = base_df.drop(columns=['trend_date'])
     
     # Merge population into base_df
     base_df = base_df.merge(pop_df[['County', 'Population']], left_on='county', right_on='County', how='left')

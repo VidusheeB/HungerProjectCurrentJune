@@ -1,0 +1,59 @@
+date,county,predicted_applications,flag
+2025-07-01,Alameda,4343.95,Green
+2025-07-01,Alpine,1589.29,Red
+2025-07-01,Amador,1613.04,Red
+2025-07-01,Butte,1710.83,Green
+2025-07-01,Calaveras,1615.43,Red
+2025-07-01,Colusa,1601.43,Red
+2025-07-01,Contra Costa,3685.41,Green
+2025-07-01,Del Norte,1603.3,Red
+2025-07-01,El Dorado,1701.23,Red
+2025-07-01,Fresno,2289.93,Green
+2025-07-01,Glenn,1604.52,Red
+2025-07-01,Humboldt,1665.65,Yellow
+2025-07-01,Imperial,2743.25,Red
+2025-07-01,Inyo,2462.87,Red
+2025-07-01,Kern,3387.35,Green
+2025-07-01,Kings,1677.63,Red
+2025-07-01,Lake,1627.45,Red
+2025-07-01,Lassen,1603.87,Red
+2025-07-01,Los Angeles,78697.65,Yellow
+2025-07-01,Madera,1687.18,Green
+2025-07-01,Marin,2669.75,Red
+2025-07-01,Mariposa,1598.2,Red
+2025-07-01,Mendocino,2517.81,Red
+2025-07-01,Merced,1765.96,Green
+2025-07-01,Modoc,1593.41,Red
+2025-07-01,Mono,1596.22,Red
+2025-07-01,Monterey,2997.12,Green
+2025-07-01,Napa,2557.43,Red
+2025-07-01,Nevada,1647.4,Red
+2025-07-01,Orange,7444.71,Green
+2025-07-01,Placer,1856.24,Red
+2025-07-01,Plumas,1599.26,Red
+2025-07-01,Riverside,6364.14,Green
+2025-07-01,Sacramento,2801.88,Green
+2025-07-01,San Benito,2501.56,Red
+2025-07-01,San Bernardino,5650.98,Green
+2025-07-01,San Diego,7852.93,Green
+2025-07-01,San Francisco,3263.3,Green
+2025-07-01,San Joaquin,2126.71,Green
+2025-07-01,San Luis Obispo,2698.51,Yellow
+2025-07-01,San Mateo,3159.54,Red
+2025-07-01,Santa Barbara,2860.47,Green
+2025-07-01,Santa Clara,4778.26,Green
+2025-07-01,Santa Cruz,2674.77,Red
+2025-07-01,Shasta,1694.02,Yellow
+2025-07-01,Sierra,1590.5,Red
+2025-07-01,Siskiyou,1612.28,Red
+2025-07-01,Solano,2866.95,Yellow
+2025-07-01,Sonoma,2898.15,Red
+2025-07-01,Stanislaus,1935.89,Green
+2025-07-01,Sutter,1644.69,Red
+2025-07-01,Tehama,1625.59,Red
+2025-07-01,Trinity,1597.52,Red
+2025-07-01,Tulare,2908.72,Green
+2025-07-01,Tuolumne,1619.4,Red
+2025-07-01,Ventura,3285.86,Green
+2025-07-01,Yolo,1717.47,Green
+2025-07-01,Yuba,1639.84,Red
